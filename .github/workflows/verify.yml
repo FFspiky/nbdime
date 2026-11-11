@@ -1,4 +1,4 @@
-name: Submitted PR verification
+name: Benchmark fresh-runner verification
 on:
   push:
     branches: [ci/submitted-pr-checks-20261111]
@@ -6,58 +6,26 @@ on:
 permissions:
   contents: read
 jobs:
-  tests:
-    name: 'PR ${{ matrix.revision.pr }} / ${{ matrix.os }}'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        revision:
-          - {pr: 829, sha: 8c0f7b53c76293d6b121f0a333171cd1618967d6}
-          - {pr: 830, sha: b2bc879463369fa66e3c9f3f5948c74a86195885}
-          - {pr: 831, sha: 80f816b6ab59a9545b403f84dcbd7639a0ca29be}
-          - {pr: 832, sha: ecc8eb586cd9df348116803807bdbbae0ac23913}
+  benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Checkout exact PR commit
+      - name: Checkout exact benchmark PR commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ matrix.revision.sha }}
+          ref: 6434c750471331b75ae2b218ffec0760d175530c
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
-      - name: Install project and test dependencies
-        run: |
-          python -m pip install --upgrade pip 'setuptools<82'
-          python -m pip install jupyterlab~=3.0
-          python -m pip install --upgrade --upgrade-strategy=eager ".[test]"
-          python -m pip install 'setuptools<82'
-      - name: Configure test Git identity
-        run: |
-          git config --global user.email CI@fake.com
-          git config --global user.name CI
-      - name: Configure Mercurial on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          "[ui]`r`nusername = CI <CI@fake.com>" | Set-Content ($HOME + "\mercurial.ini")
-      - name: Run Python suite from outside checkout
-        shell: bash
-        run: |
-          task_test_dir=$(mktemp -d)
-          cd "$task_test_dir"
-          python -m pytest -l --cov=nbdime --pyargs nbdime
-      - name: Run JavaScript suite
-        if: runner.os == 'Linux'
-        run: npm test
-      - name: Check optional benchmarks
-        if: runner.os == 'Linux' && matrix.revision.pr == 831
-        run: |
-          python -m pip install asv
-          asv check --python=same
-          asv run --python=same --quick --show-stderr --dry-run
+      - name: Install project and ASV
+        run: python -m pip install . asv
+      - name: Register the fresh runner
+        run: asv machine --yes
+      - name: Validate all benchmark definitions
+        run: asv check --python=same
+      - name: Smoke-test all 24 cases
+        run: asv run --python=same --quick --show-stderr --dry-run
